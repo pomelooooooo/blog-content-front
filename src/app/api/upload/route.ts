@@ -12,6 +12,7 @@ const ALLOWED_TYPES = [
   "image/svg+xml",
 ];
 const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+const IS_VERCEL = !!process.env.VERCEL;
 
 export async function POST(request: NextRequest) {
   try {
@@ -39,7 +40,6 @@ export async function POST(request: NextRequest) {
     const ext = path.extname(file.name) || ".jpg";
     const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
 
-    // Vercel Blob (production) — ใช้เมื่อมี BLOB_READ_WRITE_TOKEN
     if (process.env.BLOB_READ_WRITE_TOKEN) {
       const blob = await put(`uploads/${filename}`, file, {
         access: "public",
@@ -48,7 +48,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ url: blob.url, filename });
     }
 
-    // Local filesystem (development)
+    if (IS_VERCEL) {
+      return NextResponse.json(
+        { error: "BLOB_READ_WRITE_TOKEN is not configured. Please add a Vercel Blob store." },
+        { status: 500 }
+      );
+    }
+
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
     const uploadDir = path.join(process.cwd(), "public", "uploads");
@@ -56,10 +62,8 @@ export async function POST(request: NextRequest) {
     await writeFile(path.join(uploadDir, filename), buffer);
 
     return NextResponse.json({ url: `/uploads/${filename}`, filename });
-  } catch {
-    return NextResponse.json(
-      { error: "Failed to upload file" },
-      { status: 500 }
-    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to upload file";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
